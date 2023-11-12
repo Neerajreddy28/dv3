@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D3.js Force-Directed Graph</title>
+
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    #visualization {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .controls-box {
+      position: absolute;
+      bottom: 20px; 
+      right: 20px; 
+      padding: 20px;
+      background-color: rgba(248, 248, 248, 0.9); 
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      z-index: 1;
+    }
+
+    .control-group {
+      margin-bottom: 10px;
+    }
+
+    .control-buttons {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .control-button {
+      padding: 5px;
+      cursor: pointer;
+    }
+
+    .node-size-options {
+      margin-top: 10px;
+    }
+
+    #detailsPanel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 20px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      max-width: 300px;
+      display: none;
+    }
+
+    #detailsPanel.visible {
+      display: block;
+}
+
+    #detailsPanel.hidden {
+      display: none;
+}
+    svg {
+      overflow: hidden;
+    }
+
+    .link {
+      stroke: #999;
+      stroke-opacity: 0.6;
+    }
+
+    .node {
+      stroke: #fff;
+      stroke-width: 1.5px;
+      cursor: pointer;
+    }
+
+    .title {
+      font-size: 12px;
+    }
+  </style>
+
+</head>
+<body>
+
+<div id="visualization"></div>
+
+<div class="controls-box">
+  <form id="form">
+    <div class="control-group">
+      <label for="linkStrength">Link Strength:</label>
+      <div class="control-buttons">
+        <button type="button" class="control-button" onclick="adjustControl('linkStrength', 0.1)">+</button>
+        <input type="text" id="linkStrength" value="2.0">
+        <button type="button" class="control-button" onclick="adjustControl('linkStrength', -0.1)">-</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label for="collide">Collide Force:</label>
+      <div class="control-buttons">
+        <button type="button" class="control-button" onclick="adjustControl('collide', 1)">+</button>
+        <input type="text" id="collide" value="50">
+        <button type="button" class="control-button" onclick="adjustControl('collide', -1)">-</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label for="charge">Charge Force:</label>
+      <div class="control-buttons">
+        <button type="button" class="control-button" onclick="adjustControl('charge', 1)">+</button>
+        <input type="text" id="charge" value="-50">
+        <button type="button" class="control-button" onclick="adjustControl('charge', -1)">-</button>
+      </div>
+    </div>
+
+    <label>Node Size:</label>
+    <div class="node-size-options">
+      <input type="radio" name="nodeSize" value="publications" checked> Number of Publications
+      <input type="radio" name="nodeSize" value="citations"> Number of Citations
+    </div>
+
+    <input type="submit" value="Apply Changes">
+  </form>
+</div>
+<div id="detailsPanel" class="hidden">
+  <h3 id="authorName"></h3>
+  <p>Country: <span id="country"></span></p>
+  <p>Citations: <span id="citations"></span></p>
+  <p>Publications: <span id="publications"></span></p>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+function adjustControl(controlName, increment) {
+    const control = d3.select(`#${controlName}`);
+    const currentValue = +control.property('value');
+    const newValue = currentValue + increment;
+    control.property('value', newValue);
+    
+    form.dispatch('submit');
+}
+    
+d3.json("https://raw.githubusercontent.com/Neerajreddy28/json/main/author_network_data-2.json").then(function (data) {
+
+const width = 1500;
+const height = 1000;
+const form = d3.select("#form");
+const centerX = width / 2;
+const centerY = height / 2;
+
+const svg = d3.select('#visualization')
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .call(d3.zoom()
+        .scaleExtent([0.35, 3])
+        .on('zoom', zoomed))
+    .append('g');
+
+const simulation = d3.forceSimulation(data.nodes)
+    .force('charge', d3.forceManyBody().strength(-3))
+    .force('collide', d3.forceCollide(d => Math.sqrt(d.citations) * 2).iterations(2))
+    .force('link', d3.forceLink(data.links).id(d => d.id).distance(5))
+    .force('center', d3.forceCenter(centerX, centerY));
+    
+const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+// Add nodes and links 
+const link = svg.selectAll('.link')
+    .data(data.links)
+    .enter().append('line')
+    .attr('class', 'link')
+    .style('stroke', '#999') 
+    .style('stroke-opacity', 0.6);
+
+const node = svg.selectAll('.node')
+    .data(data.nodes)
+    .enter().append('circle')
+    .attr('class', 'node')
+    .attr('r', d => Math.sqrt(d.publications) * 8) //node size is publications
+    .style('fill', d => colorScale(d.country))
+    .style('stroke', '#fff') 
+    .style('stroke-width', 1.5)
+    .call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
+
+
+node.append('title')
+    .text(d => {
+        return `Author: ${d.id}\nCountry: ${d.country}\nCitations: ${d.citations}\nPublications: ${d.publications}`;
+    });
+// enabling zoom and pan
+const zoom = d3.zoom()
+    .extent([[0, 0], [width, height]])
+    .scaleExtent([0.5, 8])
+    .on('zoom', zoomed);
+svg.call(zoom);
+svg.call(zoom.transform, d3.zoomIdentity.scale(0.6));
+
+simulation.on('tick', () => {
+    link.attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+    node.attr('cx', d => d.x)
+        .attr('cy', d => d.y);
+});
+
+
+function zoomed(event) {
+    svg.attr('transform', event.transform);
+
+    if (event.transform.k !== 1) {
+        svg.attr('transform', `translate(${centerX * (1 - event.transform.k)}, ${centerY * (1 - event.transform.k)}) scale(${event.transform.k})`);
+    }
+}
+
+function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+}
+
+function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+}
+
+// Adding click event to display author details on demand
+node.on('click', function (event, d) {
+    
+    if (event.target.classList.contains('node')) {
+        
+        const detailsPanel = d3.select("#detailsPanel");
+        detailsPanel.classed('visible', true).classed('hidden', false).html(`<h3>${d.id}</h3>
+                                    <p>Country: ${d.country}</p>
+                                    <p>Citations: ${d.citations}</p>
+                                    <p>Publications: ${d.publications}</p>`);
+    }
+});
+
+
+svg.on('click', function (event) {
+    const detailsPanel = d3.select("#detailsPanel");
+    const isVisible = detailsPanel.classed('visible');
+
+    if (isVisible && !event.target.classList.contains('node')) {
+        detailsPanel.classed('visible', false).classed('hidden', true).html('');
+    }
+});
+
+d3.select("#form").on('submit', function (event)  {
+    event.preventDefault();
+
+    const linkStrength = +form.select('#linkStrength').property('value');
+    const collideForce = +form.select('#collide').property('value');
+    const chargeForce = +form.select('#charge').property('value');
+    const nodeSize = form.select('input[name="nodeSize"]:checked').property('value');
+
+    simulation.force('link').strength(linkStrength);
+    simulation.force('collide').strength(collideForce);
+    simulation.force('charge').strength(chargeForce);
+
+    updateNodeSize(nodeSize);
+});
+
+function updateNodeSize(sizeOption) {
+    // Update node size based on the selected option
+    node.attr('r', d => {
+        if (sizeOption === 'publications') return Math.sqrt(d.publications) * 8;
+        if (sizeOption === 'citations') return Math.sqrt(d.citations) * 3;
+    });
+}
+});
+
+
+</script>
+
+</script>
+</body>
+</html>
